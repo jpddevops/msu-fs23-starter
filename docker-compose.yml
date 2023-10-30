@@ -1,0 +1,83 @@
+# docker-compose.yml
+version: "3.7"
+services:
+  otel-app-one:
+    build: otel-app-one/.
+    ports:
+      - 8080:8080
+    environment:
+      OTEL_SERVICE_NAME: "otel-app-one"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector:4317"
+      OTEL_EXPORTER_OTLP_INSECURE: "true"
+    depends_on:
+      - otel-collector
+    networks:
+      - otel
+
+  otel-app-two:
+    build: otel-app-two/.
+    ports:
+      - 8081:8081
+    environment:
+      OTEL_SERVICE_NAME: "otel-app-two"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector:4317"
+      OTEL_EXPORTER_OTLP_INSECURE: "true"
+    depends_on:
+      - otel-collector
+    networks:
+    - otel
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.84.0
+    volumes:
+      - ./otel-collector-config.yaml:/etc/otelcol-contrib/config.yaml
+    ports:
+      - 13133:13133 # health_check extension
+      - 4317:4317 # OTLP gRPC receiver
+      - 4318:4318 # OTLP http receiver
+      - 55679:55679 # zpages extension
+    depends_on:
+      - kafka
+    restart: unless-stopped
+    networks:
+      - otel
+
+  zookeeper:
+    restart: always
+    image: docker.io/bitnami/zookeeper:3.8
+    ports:
+      - 2181:2181
+    volumes:
+      - "zookeeper-volume:/bitnami"
+    environment:
+      - ALLOW_ANONYMOUS_LOGIN=yes
+    networks:
+      - otel
+    
+  kafka:
+    restart: always
+    image: docker.io/bitnami/kafka:3.6.0
+    ports:
+      - 9093:9093
+    volumes:
+      - "kafka-volume:/bitnami"
+    environment:
+      - KAFKA_BROKER_ID=1
+      - KAFKA_CFG_ZOOKEEPER_CONNECT=zookeeper:2181
+      - ALLOW_PLAINTEXT_LISTENER=yes
+      - KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=CLIENT:PLAINTEXT,EXTERNAL:PLAINTEXT
+      - KAFKA_CFG_LISTENERS=CLIENT://:9092,EXTERNAL://:9093
+      - KAFKA_CFG_ADVERTISED_LISTENERS=CLIENT://kafka:9092,EXTERNAL://localhost:9093
+      - KAFKA_CFG_INTER_BROKER_LISTENER_NAME=CLIENT
+    depends_on:
+      - zookeeper
+    networks:
+      - otel 
+
+
+volumes:
+  kafka-volume:
+  zookeeper-volume:
+
+networks:
+  otel:
